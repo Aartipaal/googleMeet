@@ -139,10 +139,11 @@ const Meeting = () => {
     };
 
     init();
+    const audioCtx = audioContextRef.current;
     return () => {
       localStreamRef.current?.getTracks().forEach(t => t.stop());
       screenStreamRef.current?.getTracks().forEach(t => t.stop());
-      audioContextRef.current?.close();
+      audioCtx?.close();
       closeAll();
       socketRef.current?.emit('leave-room', { roomId: meetingId });
       disconnectSocket();
