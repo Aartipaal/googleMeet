@@ -1,37 +1,23 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
-// Free TURN servers from Open Relay Project (works on mobile + different networks)
 const ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    {
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
+    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
   ],
   iceCandidatePoolSize: 10,
 };
 
 const useWebRTC = (socket, roomId, localStream) => {
   const peersRef = useRef({});
-  const pendingCandidates = useRef({}); // queue ICE candidates before remote desc
+  const pendingCandidates = useRef({});
   const [remoteStreams, setRemoteStreams] = useState({});
   const localStreamRef = useRef(localStream);
 
-  // Keep localStreamRef in sync
   useEffect(() => { localStreamRef.current = localStream; }, [localStream]);
 
   const addRemoteStream = useCallback((socketId, stream) => {
@@ -39,57 +25,39 @@ const useWebRTC = (socket, roomId, localStream) => {
   }, []);
 
   const removeRemoteStream = useCallback((socketId) => {
-    setRemoteStreams(prev => {
-      const updated = { ...prev };
-      delete updated[socketId];
-      return updated;
-    });
-    if (peersRef.current[socketId]) {
-      peersRef.current[socketId].close();
-      delete peersRef.current[socketId];
-    }
+    setRemoteStreams(prev => { const u = { ...prev }; delete u[socketId]; return u; });
+    if (peersRef.current[socketId]) { peersRef.current[socketId].close(); delete peersRef.current[socketId]; }
     delete pendingCandidates.current[socketId];
   }, []);
 
   const createPeer = useCallback((socketId, initiator) => {
-    // Close existing peer if any
-    if (peersRef.current[socketId]) {
-      peersRef.current[socketId].close();
-    }
+    if (peersRef.current[socketId]) peersRef.current[socketId].close();
 
     const peer = new RTCPeerConnection(ICE_SERVERS);
     pendingCandidates.current[socketId] = [];
 
-    // Add local tracks
+    // Always add current local tracks when creating peer
     const stream = localStreamRef.current;
     if (stream) {
-      stream.getTracks().forEach(track => peer.addTrack(track, stream));
+      stream.getTracks().forEach(track => {
+        peer.addTrack(track, stream);
+      });
     }
 
-    // Receive remote stream
     peer.ontrack = (e) => {
-      if (e.streams && e.streams[0]) {
-        addRemoteStream(socketId, e.streams[0]);
-      }
+      if (e.streams?.[0]) addRemoteStream(socketId, e.streams[0]);
     };
 
-    // Send ICE candidates
     peer.onicecandidate = (e) => {
-      if (e.candidate && socket.current) {
-        socket.current.emit('ice-candidate', { to: socketId, candidate: e.candidate });
-      }
+      if (e.candidate) socket.current?.emit('ice-candidate', { to: socketId, candidate: e.candidate });
     };
 
     peer.oniceconnectionstatechange = () => {
-      if (peer.iceConnectionState === 'failed') {
-        peer.restartIce();
-      }
+      if (peer.iceConnectionState === 'failed') peer.restartIce();
     };
 
     peer.onconnectionstatechange = () => {
-      if (peer.connectionState === 'failed') {
-        removeRemoteStream(socketId);
-      }
+      if (peer.connectionState === 'failed') removeRemoteStream(socketId);
     };
 
     if (initiator) {
@@ -98,9 +66,7 @@ const useWebRTC = (socket, roomId, localStream) => {
           const offer = await peer.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
           await peer.setLocalDescription(offer);
           socket.current?.emit('offer', { to: socketId, offer: peer.localDescription });
-        } catch (err) {
-          console.error('Offer error:', err);
-        }
+        } catch (err) { console.error('Offer error:', err); }
       };
     }
 
@@ -108,15 +74,27 @@ const useWebRTC = (socket, roomId, localStream) => {
     return peer;
   }, [socket, addRemoteStream, removeRemoteStream]);
 
-  // Flush queued ICE candidates after remote description is set
   const flushCandidates = useCallback(async (socketId) => {
     const peer = peersRef.current[socketId];
-    const candidates = pendingCandidates.current[socketId] || [];
-    for (const candidate of candidates) {
-      try { await peer.addIceCandidate(new RTCIceCandidate(candidate)); } catch {}
+    if (!peer) return;
+    for (const c of (pendingCandidates.current[socketId] || [])) {
+      try { await peer.addIceCandidate(new RTCIceCandidate(c)); } catch {}
     }
     pendingCandidates.current[socketId] = [];
   }, []);
+
+  // Re-add tracks to all peers when localStream changes (e.g. after stream is ready)
+  useEffect(() => {
+    if (!localStream) return;
+    Object.entries(peersRef.current).forEach(([, peer]) => {
+      const senders = peer.getSenders();
+      localStream.getTracks().forEach(track => {
+        const existing = senders.find(s => s.track?.kind === track.kind);
+        if (existing) existing.replaceTrack(track);
+        else peer.addTrack(track, localStream);
+      });
+    });
+  }, [localStream]);
 
   useEffect(() => {
     if (!socket.current) return;
@@ -137,9 +115,7 @@ const useWebRTC = (socket, roomId, localStream) => {
         const answer = await peer.createAnswer();
         await peer.setLocalDescription(answer);
         s.emit('answer', { to: from, answer: peer.localDescription });
-      } catch (err) {
-        console.error('Answer error:', err);
-      }
+      } catch (err) { console.error('Answer error:', err); }
     });
 
     s.on('answer', async ({ from, answer }) => {
@@ -149,25 +125,20 @@ const useWebRTC = (socket, roomId, localStream) => {
           await peer.setRemoteDescription(new RTCSessionDescription(answer));
           await flushCandidates(from);
         }
-      } catch (err) {
-        console.error('Set answer error:', err);
-      }
+      } catch (err) { console.error('Set answer error:', err); }
     });
 
     s.on('ice-candidate', async ({ from, candidate }) => {
       try {
         const peer = peersRef.current[from];
         if (!peer) return;
-        if (peer.remoteDescription && peer.remoteDescription.type) {
+        if (peer.remoteDescription?.type) {
           await peer.addIceCandidate(new RTCIceCandidate(candidate));
         } else {
-          // Queue until remote description is set
           if (!pendingCandidates.current[from]) pendingCandidates.current[from] = [];
           pendingCandidates.current[from].push(candidate);
         }
-      } catch (err) {
-        console.error('ICE candidate error:', err);
-      }
+      } catch (err) { console.error('ICE error:', err); }
     });
 
     s.on('user-left', ({ socketId }) => removeRemoteStream(socketId));

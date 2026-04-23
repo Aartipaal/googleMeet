@@ -37,7 +37,7 @@ const Meeting = () => {
   const [participants, setParticipants] = useState([]);
   const [messages, setMessages] = useState([]);
   const [panel, setPanel] = useState(null);
-  const [permissions, setPermissions] = useState({ mic: true, camera: true, screenShare: role === 'admin', smartBoard: role === 'admin' });
+  const [permissions, setPermissions] = useState({ mic: true, camera: true, screenShare: true, smartBoard: role === 'admin' });
   const [notifications, setNotifications] = useState([]);
   const [gridView, setGridView] = useState(true);
   const [floatingReactions, setFloatingReactions] = useState([]);
@@ -69,17 +69,23 @@ const Meeting = () => {
   // Init media + socket
   useEffect(() => {
     const init = async () => {
+      // Get media FIRST before socket joins
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
         localStreamRef.current = stream;
         setLocalStream(stream);
       } catch {
-        notify('Camera/mic access denied');
+        notify('Camera/mic access denied — joining without media');
       }
 
+      // Join socket AFTER stream is ready so tracks are available for peers
       const socket = initSocket(token);
       socketRef.current = socket;
-      socket.emit('join-room', { roomId: meetingId, userId: user.id, name: user.name, role });
+
+      // Small delay to ensure socket listeners are set before emitting
+      setTimeout(() => {
+        socket.emit('join-room', { roomId: meetingId, userId: user.id, name: user.name, role });
+      }, 500);
 
       // populate existing participants when admin joins
       socket.on('existing-participants', (list) => {
