@@ -1,4 +1,6 @@
 require('dotenv').config();
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'smartmeet_secret_2024';
+process.env.CLIENT_URL = process.env.CLIENT_URL || 'https://smartmeet-client.onrender.com';
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
