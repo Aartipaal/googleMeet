@@ -4,7 +4,6 @@ const ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
     { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
     { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
@@ -30,19 +29,25 @@ const useWebRTC = (socket, roomId, localStream) => {
     delete pendingCandidates.current[socketId];
   }, []);
 
-  const createPeer = useCallback((socketId, initiator) => {
-    if (peersRef.current[socketId]) peersRef.current[socketId].close();
+  const addTracksToP = useCallback((peer) => {
+    const stream = localStreamRef.current;
+    if (!stream) return;
+    const senders = peer.getSenders();
+    stream.getTracks().forEach(track => {
+      const exists = senders.find(s => s.track?.kind === track.kind);
+      if (!exists) peer.addTrack(track, stream);
+    });
+  }, []);
 
-    const peer = new RTCPeerConnection(ICE_SERVERS);
+  const createPeer = useCallback((socketId) => {
+    if (peersRef.current[socketId]) {
+      peersRef.current[socketId].close();
+      delete peersRef.current[socketId];
+    }
     pendingCandidates.current[socketId] = [];
 
-    // Always add current local tracks when creating peer
-    const stream = localStreamRef.current;
-    if (stream) {
-      stream.getTracks().forEach(track => {
-        peer.addTrack(track, stream);
-      });
-    }
+    const peer = new RTCPeerConnection(ICE_SERVERS);
+    addTracksToP(peer);
 
     peer.ontrack = (e) => {
       if (e.streams?.[0]) addRemoteStream(socketId, e.streams[0]);
@@ -56,23 +61,9 @@ const useWebRTC = (socket, roomId, localStream) => {
       if (peer.iceConnectionState === 'failed') peer.restartIce();
     };
 
-    peer.onconnectionstatechange = () => {
-      if (peer.connectionState === 'failed') removeRemoteStream(socketId);
-    };
-
-    if (initiator) {
-      peer.onnegotiationneeded = async () => {
-        try {
-          const offer = await peer.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
-          await peer.setLocalDescription(offer);
-          socket.current?.emit('offer', { to: socketId, offer: peer.localDescription });
-        } catch (err) { console.error('Offer error:', err); }
-      };
-    }
-
     peersRef.current[socketId] = peer;
     return peer;
-  }, [socket, addRemoteStream, removeRemoteStream]);
+  }, [socket, addRemoteStream, addTracksToP]);
 
   const flushCandidates = useCallback(async (socketId) => {
     const peer = peersRef.current[socketId];
@@ -83,33 +74,30 @@ const useWebRTC = (socket, roomId, localStream) => {
     pendingCandidates.current[socketId] = [];
   }, []);
 
-  // Re-add tracks to all peers when localStream changes (e.g. after stream is ready)
-  useEffect(() => {
-    if (!localStream) return;
-    Object.entries(peersRef.current).forEach(([, peer]) => {
-      const senders = peer.getSenders();
-      localStream.getTracks().forEach(track => {
-        const existing = senders.find(s => s.track?.kind === track.kind);
-        if (existing) existing.replaceTrack(track);
-        else peer.addTrack(track, localStream);
-      });
-    });
-  }, [localStream]);
-
   useEffect(() => {
     if (!socket.current) return;
     const s = socket.current;
 
+    // New joiner receives list of existing users → initiates offer to each
     s.on('existing-participants', (participants) => {
-      participants.forEach(({ socketId }) => createPeer(socketId, true));
+      participants.forEach(({ socketId }) => {
+        const peer = createPeer(socketId);
+        peer.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
+          .then(offer => peer.setLocalDescription(offer))
+          .then(() => s.emit('offer', { to: socketId, offer: peer.localDescription }))
+          .catch(err => console.error('Offer error:', err));
+      });
     });
 
-    s.on('user-joined', ({ socketId }) => createPeer(socketId, false));
+    // Existing user receives notification that someone new joined → waits for offer
+    s.on('user-joined', ({ socketId }) => {
+      createPeer(socketId); // just create peer, wait for their offer
+    });
 
     s.on('offer', async ({ from, offer }) => {
       try {
         let peer = peersRef.current[from];
-        if (!peer) peer = createPeer(from, false);
+        if (!peer) peer = createPeer(from);
         await peer.setRemoteDescription(new RTCSessionDescription(offer));
         await flushCandidates(from);
         const answer = await peer.createAnswer();
@@ -125,7 +113,7 @@ const useWebRTC = (socket, roomId, localStream) => {
           await peer.setRemoteDescription(new RTCSessionDescription(answer));
           await flushCandidates(from);
         }
-      } catch (err) { console.error('Set answer error:', err); }
+      } catch (err) { console.error('Answer set error:', err); }
     });
 
     s.on('ice-candidate', async ({ from, candidate }) => {
@@ -138,7 +126,7 @@ const useWebRTC = (socket, roomId, localStream) => {
           if (!pendingCandidates.current[from]) pendingCandidates.current[from] = [];
           pendingCandidates.current[from].push(candidate);
         }
-      } catch (err) { console.error('ICE error:', err); }
+      } catch {}
     });
 
     s.on('user-left', ({ socketId }) => removeRemoteStream(socketId));
@@ -152,6 +140,12 @@ const useWebRTC = (socket, roomId, localStream) => {
       s.off('user-left');
     };
   }, [socket, createPeer, removeRemoteStream, flushCandidates]);
+
+  // When localStream becomes available, add tracks to existing peers
+  useEffect(() => {
+    if (!localStream) return;
+    Object.values(peersRef.current).forEach(peer => addTracksToP(peer));
+  }, [localStream, addTracksToP]);
 
   const replaceTrack = useCallback((newStream) => {
     Object.values(peersRef.current).forEach(peer => {

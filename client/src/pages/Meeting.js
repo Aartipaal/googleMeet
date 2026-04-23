@@ -81,11 +81,7 @@ const Meeting = () => {
       // Join socket AFTER stream is ready so tracks are available for peers
       const socket = initSocket(token);
       socketRef.current = socket;
-
-      // Small delay to ensure socket listeners are set before emitting
-      setTimeout(() => {
-        socket.emit('join-room', { roomId: meetingId, userId: user.id, name: user.name, role });
-      }, 500);
+      socket.emit('join-room', { roomId: meetingId, userId: user.id, name: user.name, role });
 
       // populate existing participants when admin joins
       socket.on('existing-participants', (list) => {
