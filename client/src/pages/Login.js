@@ -65,7 +65,7 @@ const Login = () => {
           )}
           {(mode === 'login' || mode === 'register') && (
             <input style={styles.input} type="password" placeholder="Password" value={form.password}
-              onChange={e => set('password', e.target.value)} required />
+              onChange={e => set('password', e.target.value)} required autoComplete="current-password" />
           )}
           {mode === 'otp' && step === 2 && (
             <input style={styles.input} placeholder="Enter 6-digit OTP" value={form.otp}
