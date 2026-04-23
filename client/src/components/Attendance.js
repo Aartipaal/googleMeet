@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import QRCode from 'qrcode';
 
-const API = process.env.REACT_APP_API_URL;
+import { API_URL as API } from '../config';
 
 const fmt = (s) => {
   if (!s && s !== 0) return '—';

@@ -10,7 +10,7 @@ import SmartBoard from '../components/SmartBoard';
 import AdminPanel from '../components/AdminPanel';
 import Attendance, { MyAttendanceCard } from '../components/Attendance';
 
-const API = process.env.REACT_APP_API_URL;
+import { API_URL as API } from '../config';
 const REACTIONS = ['👍','👏','❤️','😂','😮','🎉','🔥','👋'];
 
 const Meeting = () => {

@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import EmojiPicker from 'emoji-picker-react';
 import axios from 'axios';
 
-const API = process.env.REACT_APP_API_URL;
+import { API_URL as API } from '../config';
 
 const Chat = ({ socket, roomId, user, messages, onClose }) => {
   const [text, setText] = useState('');

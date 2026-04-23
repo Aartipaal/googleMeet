@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 
-const API = process.env.REACT_APP_API_URL;
+import { API_URL as API } from '../config';
 
 const REACTIONS = ['👍','👏','❤️','😂','😮','🎉','🔥','👋'];
 
@@ -77,37 +77,36 @@ const Home = () => {
           </div>
           {error && <p style={styles.error}>{error}</p>}
           {tab === 'join' ? (
-            <div style={styles.form}>
+            <form style={styles.form} onSubmit={e => { e.preventDefault(); joinMeeting(); }}>
               <input style={styles.input} placeholder="Enter meeting code or link" value={joinId}
+                autoComplete="off"
                 onChange={e => {
                   const val = e.target.value;
-                  // extract ID from full link if pasted
                   const match = val.match(/\/meeting\/([^/?]+)/);
                   setJoinId(match ? match[1] : val);
                 }} />
               <input style={styles.input} type="password" placeholder="Password (if any)" value={joinPass}
+                autoComplete="current-password"
                 onChange={e => setJoinPass(e.target.value)} />
               <div style={styles.row}>
-                <button style={styles.btn} onClick={joinMeeting}>Join Now</button>
-                <button style={{ ...styles.outlineBtn }} onClick={copyLink} title="Copy meeting link">
+                <button style={styles.btn} type="submit">Join Now</button>
+                <button style={{ ...styles.outlineBtn }} type="button" onClick={copyLink} title="Copy meeting link">
                   {copied ? '✅ Copied!' : '🔗 Copy Link'}
                 </button>
               </div>
-              <div style={styles.gmailHint}>
-                📧 Received a Gmail invite? Paste the meeting link above
-              </div>
-            </div>
+              <div style={styles.gmailHint}>📧 Received a Gmail invite? Paste the meeting link above</div>
+            </form>
           ) : (
-            <div style={styles.form}>
+            <form style={styles.form} onSubmit={e => { e.preventDefault(); createMeeting(); }}>
               <input style={styles.input} placeholder="Meeting title (optional)" value={meetTitle}
+                autoComplete="off"
                 onChange={e => setMeetTitle(e.target.value)} />
               <input style={styles.input} type="password" placeholder="Set password (optional)" value={meetPass}
+                autoComplete="new-password"
                 onChange={e => setMeetPass(e.target.value)} />
-              <button style={styles.btn} onClick={createMeeting}>Create & Start</button>
-              <div style={styles.gmailHint}>
-                📅 Add to Google Calendar after creating
-              </div>
-            </div>
+              <button style={styles.btn} type="submit">Create & Start</button>
+              <div style={styles.gmailHint}>📅 Add to Google Calendar after creating</div>
+            </form>
           )}
         </div>
 
