@@ -28,12 +28,15 @@ const Home = () => {
   };
 
   const joinMeeting = async () => {
-    if (!joinId.trim()) return setError('Enter a meeting ID');
+    const id = joinId.trim();
+    if (!id) return setError('Enter a meeting code');
+    if (id.includes('@')) return setError('Enter the meeting CODE, not your email. Example: abc-1234');
+    if (id.includes('http')) return setError('Paste the full link in the field above to auto-extract the code');
     try {
-      await axios.post(`${API}/api/meetings/${joinId}/join`, { password: joinPass });
-      navigate(`/meeting/${joinId}`, { state: { role: 'participant', password: joinPass } });
+      await axios.post(`${API}/api/meetings/${id}/join`, { password: joinPass });
+      navigate(`/meeting/${id}`, { state: { role: 'participant', password: joinPass } });
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to join meeting');
+      setError(err.response?.data?.message || 'Meeting not found. Check the code and try again.');
     }
   };
 
@@ -78,7 +81,7 @@ const Home = () => {
           {error && <p style={styles.error}>{error}</p>}
           {tab === 'join' ? (
             <form style={styles.form} onSubmit={e => { e.preventDefault(); joinMeeting(); }}>
-              <input style={styles.input} placeholder="Enter meeting code or link" value={joinId}
+              <input style={styles.input} placeholder="Enter meeting code (e.g. abc-12345)" value={joinId}
                 autoComplete="off"
                 onChange={e => {
                   const val = e.target.value;
