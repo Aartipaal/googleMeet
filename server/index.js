@@ -11,25 +11,30 @@ const connectDB = require('./src/config');
 const app = express();
 const server = http.createServer(app);
 
-// Manual CORS headers — applied before everything else
+// CORS — must be first middleware before anything else
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
-  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'false');
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
   next();
 });
 
 const io = new Server(server, {
-  cors: { origin: '*', methods: ['GET', 'POST'] },
-  transports: ['websocket', 'polling'],
+  cors: { origin: '*', methods: ['GET', 'POST'], credentials: false },
+  transports: ['polling', 'websocket'],
 });
 
 connectDB();
 
 app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+app.get('/', (req, res) => res.json({ status: 'SmartMeet API running', time: new Date() }));
 app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
 
 app.use('/api/auth', require('./src/routes/auth'));
