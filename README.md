@@ -1,4 +1,4 @@
-# SmartMeet - Collaborative Video Meeting Platform
+ # SmartMeet - Collaborative Video Meeting Platform
 
 ## Prerequisites
 - Node.js v18+
